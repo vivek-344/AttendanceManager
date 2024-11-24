@@ -16,24 +16,25 @@
             <div class="row gx-4 gx-lg-5 justify-content-center">
                 <div class="col-md-10 col-lg-8 col-xl-7">
                     <!-- Post preview-->
-                    {% for lecture in lectures[start:end]: %}
+                    {% for lecture_data in lectures[start:end] %}
                         <div class="post-preview">
-                            <a href="{{ url_for('get_lecture_attendance', lecture_id=lecture.id) }}">
+                            <a href="{{ url_for('get_lecture_attendance', lecture_id=lecture_data['lecture'].id) }}">
                                 <h2 class="post-title">
-                                    {{ lecture.subject.subject_name }} (Lecture {{ lecture_sequence[lecture.id] }})
+                                    {{ lecture_data['lecture'].subject.subject_name }} (Lecture {{ lecture_sequence[lecture_data['lecture'].id] }})
                                 </h2>
-                                <h3 class="post-subtitle">{{ lecture.timestamp }}</h3>
+                                <h3 class="post-subtitle">{{ lecture_data['formatted_timestamp'] }}</h3>
                             </a>
                             <p class="post-meta">
-                                Taken by {{ lecture.teacher.name }}
-                                {% if user.id == lecture.teacher.id %}
-                                    <a href="{{ url_for('delete_lecture', lecture_id=lecture.id) }}">✘</a>
+                                Taken by {{ lecture_data['lecture'].teacher.name }}
+                                {% if user.id == lecture_data['lecture'].teacher.id %}
+                                    <a href="{{ url_for('delete_lecture', lecture_id=lecture_data['lecture'].id) }}">✘</a>
                                 {% endif %}
                             </p>
                         </div>
                         <!-- Divider-->
                         <hr class="my-4" />
                     {% endfor %}
+
                     {% if request.endpoint != 'older' %}
                         {% if user %}
                             <div class="d-flex justify-content-end mb-4">

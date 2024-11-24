@@ -3,7 +3,7 @@ import smtplib
 from functools import wraps
 from dotenv import load_dotenv
 from flask_bootstrap import Bootstrap5
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 from models import db, User, Batch, Student, Subject, Lecture, Attendance, AttendanceStats
 from flask import Flask, render_template, request, redirect, url_for, jsonify, abort, flash
@@ -144,10 +144,25 @@ def render_lectures_template(lectures, start=None, end=None):
         lecture.id: lecture_numbers[lecture.subject_id].index(lecture.id) + 1 for lecture in lectures_sorted
     }
 
+    # Convert UTC timestamp to IST manually and format
+    formatted_lectures = []
+    for lecture in lectures:
+        # Convert UTC timestamp to IST (UTC + 5:30 hours)
+        ist_time = lecture.timestamp + timedelta(hours=5, minutes=30)
+
+        # Format the IST time as required (e.g., August 2nd, 2024 at 01:23 PM)
+        formatted_time = ist_time.strftime('%B %d, %Y at %I:%M %p')
+
+        # Append the original lecture object and the formatted timestamp
+        formatted_lectures.append({
+            'lecture': lecture,  # Keep the original lecture object
+            'formatted_timestamp': formatted_time  # Add formatted timestamp
+        })
+
     return render_template(
         "index.html",
         year=year,
-        lectures=lectures,  # Pass original order for display
+        lectures=formatted_lectures,  # Pass formatted lectures with original lecture object
         lecture_sequence=lecture_sequence,  # Pass sequence numbers
         start=start,
         end=end,
@@ -299,7 +314,6 @@ def add_new_lecture():
         phrase="Create a new lecture and proceed to mark attendance.",
         image=image
     )
-
 
 @app.route('/mark-attendance', methods=['GET', 'POST'])
 def mark_attendance():
