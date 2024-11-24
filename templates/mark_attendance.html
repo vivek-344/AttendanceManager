@@ -50,14 +50,19 @@
                     name="attendance_{{ student.id }}"
                     id="attendance_{{ student.id }}"
                     value="on"
-                    {% if attendance_status_map[student.id] %}checked{% endif %}>
+                    {% if attendance_status_map[student.id] %}checked{% endif %}
+                    {% if not is_creator %}disabled{% endif %}>
                 </td>
               </tr>
               {% endfor %}
             </tbody>
           </table>
 
+          {% if is_creator %}
           <button type="submit" class="btn btn-primary">Submit Attendance</button>
+          {% else %}
+          <p class="text-muted">You do not have permission to edit attendance for this lecture.</p>
+          {% endif %}
         </form>
       </div>
     </div>

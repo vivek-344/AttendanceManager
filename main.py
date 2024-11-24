@@ -45,7 +45,7 @@ def admin_only(func):
     return wrapper
 
 
-def taker_only(func):
+def creator_only(func):
     @wraps(func)
     @login_required
     def wrapper(*args, **kwargs):
@@ -279,11 +279,13 @@ def add_new_lecture():
 
 
 @app.route('/mark-attendance', methods=['GET', 'POST'])
-@login_required
 def mark_attendance():
     lecture_id = request.args.get('lecture_id', type=int)
     lecture = Lecture.query.get_or_404(lecture_id)
     batch_id = lecture.batch_id
+
+    # Determine if the current user is logged in and is the creator of the lecture
+    is_creator = current_user.is_authenticated and lecture.teacher_id == current_user.id
 
     # Sort students based on enrollment number
     students = Student.query.filter_by(batch_id=batch_id).order_by(Student.enrollment_number).all()
@@ -298,31 +300,37 @@ def mark_attendance():
     form = AttendanceForm()
     form.lecture_id.data = lecture_id
 
-    if request.method == 'POST' and form.validate_on_submit():
-        attendance_records = []
-        for student in students:
-            # Check if attendance is marked as "Present" (checkbox is ticked)
-            attendance_status = request.form.get(f'attendance_{student.id}') == 'on'
-            existing_record = existing_attendance.get(student.id)
+    if request.method == 'POST':
+        # Restrict attendance submission to the lecture creator
+        if not is_creator:
+            flash("You are not authorized to mark attendance for this lecture.", "danger")
+            return redirect(url_for('mark_attendance', lecture_id=lecture_id))
 
-            if existing_record is None:
-                # Create new record if no existing record is found
-                attendance_records.append(Attendance(
-                    lecture_id=lecture_id,
-                    student_id=student.id,
-                    status=attendance_status
-                ))
-            elif existing_record != attendance_status:
-                # Update the record only if the status has changed
-                attendance = Attendance.query.filter_by(lecture_id=lecture_id, student_id=student.id).first()
-                attendance.status = attendance_status
+        if form.validate_on_submit():
+            attendance_records = []
+            for student in students:
+                # Check if attendance is marked as "Present" (checkbox is ticked)
+                attendance_status = request.form.get(f'attendance_{student.id}') == 'on'
+                existing_record = existing_attendance.get(student.id)
 
-        if attendance_records:
-            db.session.bulk_save_objects(attendance_records)
-        db.session.commit()
+                if existing_record is None:
+                    # Create new record if no existing record is found
+                    attendance_records.append(Attendance(
+                        lecture_id=lecture_id,
+                        student_id=student.id,
+                        status=attendance_status
+                    ))
+                elif existing_record != attendance_status:
+                    # Update the record only if the status has changed
+                    attendance = Attendance.query.filter_by(lecture_id=lecture_id, student_id=student.id).first()
+                    attendance.status = attendance_status
 
-        flash("Attendance marked successfully!", "success")
-        return redirect(url_for('home'))
+            if attendance_records:
+                db.session.bulk_save_objects(attendance_records)
+            db.session.commit()
+
+            flash("Attendance marked successfully!", "success")
+            return redirect(url_for('home'))
 
     # Prepare the pre-checked status for each student based on existing attendance
     attendance_status_map = {
@@ -338,6 +346,7 @@ def mark_attendance():
         students=students,
         attendance_status_map=attendance_status_map,
         user=current_user,
+        is_creator=is_creator,
         action="Mark Attendance",
         phrase=f"Mark attendance for Lecture {lecture_id} - {lecture.subject.subject_name}",
         image=image
@@ -345,7 +354,7 @@ def mark_attendance():
 
 
 @app.route('/delete-lecture/<lecture_id>', methods=['GET', 'DELETE'])
-@taker_only
+@creator_only
 def delete_lecture(lecture_id):
     lecture = db.session.query(Lecture).get(lecture_id)
     db.session.query(Attendance).filter_by(lecture_id=lecture_id).delete()
