@@ -129,8 +129,31 @@ def render_lectures_template(lectures, start=None, end=None):
     start = max(0, start)
     end = min(total_lectures, end)
 
-    return render_template("index.html", year=year, lectures=lectures, start=start, end=end,
-                           user=user, len=total_lectures)
+    # Sort lectures by timestamp for proper sequencing
+    lectures_sorted = sorted(lectures, key=lambda l: l.timestamp)
+
+    # Calculate lecture numbers for each subject
+    lecture_numbers = {}
+    for lecture in lectures_sorted:
+        if lecture.subject_id not in lecture_numbers:
+            lecture_numbers[lecture.subject_id] = []
+        lecture_numbers[lecture.subject_id].append(lecture.id)
+
+    # Map lecture IDs to their sequence numbers
+    lecture_sequence = {
+        lecture.id: lecture_numbers[lecture.subject_id].index(lecture.id) + 1 for lecture in lectures_sorted
+    }
+
+    return render_template(
+        "index.html",
+        year=year,
+        lectures=lectures,  # Pass original order for display
+        lecture_sequence=lecture_sequence,  # Pass sequence numbers
+        start=start,
+        end=end,
+        user=user,
+        len=total_lectures
+    )
 
 
 @app.route('/')
@@ -287,6 +310,15 @@ def mark_attendance():
     # Determine if the current user is logged in and is the creator of the lecture
     is_creator = current_user.is_authenticated and lecture.teacher_id == current_user.id
 
+    # Calculate the lecture number for the subject
+    lecture_number = (
+        Lecture.query.filter_by(subject_id=lecture.subject_id)
+        .order_by(Lecture.timestamp)
+        .with_entities(Lecture.id)
+        .all()
+    )
+    lecture_index = [l.id for l in lecture_number].index(lecture_id) + 1
+
     # Sort students based on enrollment number
     students = Student.query.filter_by(batch_id=batch_id).order_by(Student.enrollment_number).all()
 
@@ -348,7 +380,7 @@ def mark_attendance():
         user=current_user,
         is_creator=is_creator,
         action="Mark Attendance",
-        phrase=f"Mark attendance for Lecture {lecture_id} - {lecture.subject.subject_name}",
+        phrase=f"Lecture {lecture_index} - {lecture.subject.subject_name}",
         image=image
     )
 

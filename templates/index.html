@@ -19,7 +19,9 @@
                     {% for lecture in lectures[start:end]: %}
                         <div class="post-preview">
                             <a href="{{ url_for('get_lecture_attendance', lecture_id=lecture.id) }}">
-                                <h2 class="post-title">{{ lecture.subject.subject_name }}</h2>
+                                <h2 class="post-title">
+                                    {{ lecture.subject.subject_name }} (Lecture {{ lecture_sequence[lecture.id] }})
+                                </h2>
                                 <h3 class="post-subtitle">{{ lecture.timestamp }}</h3>
                             </a>
                             <p class="post-meta">
