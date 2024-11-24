@@ -6,3 +6,4 @@ Flask-Login~=0.6.3
 WTForms~=3.1.2
 Bootstrap_Flask~=2.4.1
 psycopg2-binary~=2.9.10
+Flask-SQLAlchemy~=3.1.1
