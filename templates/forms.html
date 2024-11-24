@@ -58,6 +58,16 @@
         </div>
       </div>
     {% endif %}
+    {% if request.endpoint == 'add_new_lecture' %}
+      <div class="d-flex justify-content-end mb-4">
+        <a class="btn btn-primary float-right" href="{{url_for('add_new_subject')}}">Add Subject</a>
+      </div>
+    {% endif %}
+    {% if request.endpoint == 'add_new_student' %}
+      <div class="d-flex justify-content-end mb-4">
+        <a class="btn btn-primary float-right" href="{{url_for('add_new_batch')}}">Add New Batch</a>
+      </div>
+    {% endif %}
   </div>
 </main>
 

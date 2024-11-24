@@ -1,15 +1,15 @@
 import os
 import smtplib
-from datetime import datetime, timezone
 from functools import wraps
 from dotenv import load_dotenv
 from flask_bootstrap import Bootstrap5
+from datetime import datetime, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 from models import db, User, Batch, Student, Subject, Lecture, Attendance, AttendanceStats
 from flask import Flask, render_template, request, redirect, url_for, jsonify, abort, flash
 from flask_login import login_user, LoginManager, current_user, logout_user, login_required
-from forms import UserRegistrationForm, SubjectForm, StudentForm, LectureForm, AttendanceForm, AttendanceReportForm, UserLoginForm
-
+from forms import UserRegistrationForm, SubjectForm, StudentForm, LectureForm, AttendanceForm, AttendanceReportForm, \
+    UserLoginForm, BatchForm
 
 load_dotenv()
 EMAIL = os.getenv("EMAIL")
@@ -284,7 +284,9 @@ def mark_attendance():
     lecture_id = request.args.get('lecture_id', type=int)
     lecture = Lecture.query.get_or_404(lecture_id)
     batch_id = lecture.batch_id
-    students = Student.query.filter_by(batch_id=batch_id).all()
+
+    # Sort students based on enrollment number
+    students = Student.query.filter_by(batch_id=batch_id).order_by(Student.enrollment_number).all()
 
     if not students:
         flash("No students found in the selected batch.", "danger")
@@ -350,6 +352,109 @@ def delete_lecture(lecture_id):
     db.session.delete(lecture)
     db.session.commit()
     return redirect(url_for('home'))
+
+
+@app.route('/add-subject/', methods=['GET', 'POST'])
+@login_required
+def add_new_subject():
+    form = SubjectForm()
+
+    if form.validate_on_submit():
+        # Create the new subject
+        new_subject = Subject(
+            subject_name=form.subject_name.data,
+            teacher_id=current_user.id
+        )
+        db.session.add(new_subject)
+        db.session.commit()
+
+        flash('Subject created successfully!', 'success')
+        return redirect(url_for('add_new_lecture'))
+
+    image = '../static/assets/img/post-bg.jpg'
+    return render_template(
+        'forms.html',
+        form=form,
+        user=current_user,
+        action="Add New Subject",
+        phrase="Create a new subject for your courses.",
+        image=image
+    )
+
+
+@app.route('/add-batch', methods=['GET', 'POST'])
+@admin_only
+def add_new_batch():
+    form = BatchForm()
+
+    if request.method == 'POST' and form.validate_on_submit():
+        batch_name = form.batch_name.data
+
+        # Check if the batch already exists
+        existing_batch = Batch.query.filter_by(name=batch_name).first()
+        if existing_batch:
+            flash(f"A batch with the name '{batch_name}' already exists.", "danger")
+            return redirect(url_for('add_new_batch'))
+
+        # Create and add the new batch to the database
+        new_batch = Batch(name=batch_name)
+        db.session.add(new_batch)
+        db.session.commit()
+
+        flash(f"Batch '{batch_name}' created successfully!", "success")
+        return redirect(url_for('add_new_student'))
+
+    image = '../static/assets/img/post-bg.jpg'
+    return render_template(
+        'forms.html',
+        form=form,
+        user=current_user,
+        action="Add New Batch",
+        phrase="Create a new batch for your courses.",
+        image=image
+    )
+
+
+@app.route('/add-student/', methods=['GET', 'POST'])
+@admin_only
+def add_new_student():
+    form = StudentForm()
+    form.batch.choices = [(batch.id, batch.name) for batch in Batch.query.all()]
+
+    if request.method == 'POST' and form.validate_on_submit():
+        # Get the form data and create a new Student record
+        student_name = form.student_name.data
+        enrollment_number = form.enrollment_number.data
+        batch_id = form.batch.data  # Assuming batch is selected from the form
+
+        # Check if the enrollment number already exists
+        existing_student = Student.query.filter_by(enrollment_number=enrollment_number).first()
+        if existing_student:
+            flash("A student with this enrollment number already exists!", "danger")
+            return redirect(url_for('add_new_student'))
+
+        # Create and save the new student to the database
+        new_student = Student(
+            student_name=student_name,
+            enrollment_number=enrollment_number,
+            batch_id=batch_id
+        )
+        db.session.add(new_student)
+        db.session.commit()
+
+        flash("Student added successfully!", "success")
+        return redirect(url_for('add_new_student'))
+
+    # Set the image for the header
+    image = '../static/assets/img/post-bg.jpg'
+    return render_template(
+        'forms.html',
+        form=form,
+        user=current_user,
+        action="Add New Student",
+        phrase="Create a new student record for your courses.",
+        image=image
+    )
 
 
 @app.route('/about')

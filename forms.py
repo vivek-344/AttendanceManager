@@ -36,7 +36,7 @@ class StudentForm(FlaskForm):
             Length(min=12, max=12),  # Length validation for enrollment numbers
             Regexp(
                 r'^\d{4}[A-Z]{2}\d{3}[A-Z0-9]\d{2}$',
-                message="Enrollment number must follow the pattern: 4 digits, 2 letters, 3 digits, 1 alphanumeric, and 2 digits."
+                message="Enrollment number must follow the pattern: 4 digits, 2 letters, 3 digits, 1 alphanumeric, and 2 digits. Eg: 0101IT221076"
             )
         ]
     )
@@ -50,6 +50,21 @@ class LectureForm(FlaskForm):
     subject = SelectField('Subject', coerce=int, validators=[DataRequired()])  # Choices to be populated dynamically
     batch = SelectField('Batch', coerce=int, validators=[DataRequired()])  # Choices to be populated dynamically
     submit = SubmitField('Proceed to Mark Attendance')
+
+
+class BatchForm(FlaskForm):
+    batch_name = StringField(
+        'Batch Name',
+        validators=[
+            DataRequired(),
+            Length(min=4, max=4),
+            Regexp(
+                r'^[A-Z]{2}\d{2}$',
+                message="Batch name must consist of 2 uppercase letters followed by 2 digits. Eg: IT26"
+            )
+        ]
+    )
+    submit = SubmitField('Create Batch')
 
 
 # Attendance Form

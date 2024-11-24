@@ -32,7 +32,7 @@
                         <!-- Divider-->
                         <hr class="my-4" />
                     {% endfor %}
-                    {% if request.path.split('/')[-1] != "older_lectures": %}
+                    {% if request.endpoint != 'older' %}
                         {% if user %}
                             <div class="d-flex justify-content-end mb-4">
                                 <a class="btn btn-primary float-right" href="{{url_for('add_new_lecture')}}">Take Attendance</a>
