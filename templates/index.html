@@ -4,8 +4,8 @@
                 <div class="row gx-4 gx-lg-5 justify-content-center">
                     <div class="col-md-10 col-lg-8 col-xl-7">
                         <div class="site-heading">
-                            <h1>Vel Blogs</h1>
-                            <span class="subheading">The Open Sky for Your Stories</span>
+                            <h1>Attendance Manager</h1>
+                            <span class="subheading">Effortlessly track and manage student attendance.</span>
                         </div>
                     </div>
                 </div>
@@ -16,35 +16,33 @@
             <div class="row gx-4 gx-lg-5 justify-content-center">
                 <div class="col-md-10 col-lg-8 col-xl-7">
                     <!-- Post preview-->
-                    {% for post in posts[start:end]: %}
+                    {% for lecture in lectures[start:end]: %}
                         <div class="post-preview">
-                            <a href="{{ url_for('blog', post_id=post.id) }}">
-                                <h2 class="post-title">{{ post.title }}</h2>
-                                <h3 class="post-subtitle">{{ post.subtitle }}</h3>
+                            <a href="{{ url_for('get_lecture_attendance', lecture_id=lecture.id) }}">
+                                <h2 class="post-title">{{ lecture.subject.subject_name }}</h2>
+                                <h3 class="post-subtitle">{{ lecture.timestamp }}</h3>
                             </a>
                             <p class="post-meta">
-                                Posted by
-                                <a href="{{ url_for('home', posts_by=post.parent_id ) }}">{{ post.author }}</a>
-                                on {{ post.date }}
-                                {% if user_id == post.parent_id %}
-                                    <a href="{{ url_for('delete_post', post_id=post.id) }}">✘</a>
+                                Taken by {{ lecture.teacher.name }}
+                                {% if user.id == lecture.teacher.id %}
+                                    <a href="{{ url_for('delete_lecture', lecture_id=lecture.id) }}">✘</a>
                                 {% endif %}
                             </p>
                         </div>
                         <!-- Divider-->
                         <hr class="my-4" />
                     {% endfor %}
-                    {% if request.path.split('/')[-1] != "older_posts": %}
-                        {% if logged_in %}
+                    {% if request.path.split('/')[-1] != "older_lectures": %}
+                        {% if user %}
                             <div class="d-flex justify-content-end mb-4">
-                                <a class="btn btn-primary float-right" href="{{url_for('add_new_post')}}">Create New Post</a>
+                                <a class="btn btn-primary float-right" href="{{url_for('add_new_lecture')}}">Take Attendance</a>
                             </div>
                         {% endif %}
                         {% if len > 5 %}
-                            <div class="d-flex justify-content-end mb-4"><a class="btn btn-primary text-uppercase" href="{{ url_for('older', posts_by=request.args.get('posts_by')) }}">Older Posts →</a></div>
+                            <div class="d-flex justify-content-end mb-4"><a class="btn btn-primary text-uppercase" href="{{ url_for('older') }}">Older Lectures →</a></div>
                         {% endif %}
                     {% else %}
-                        <div class="d-flex justify-content-start mb-4"><a class="btn btn-primary text-uppercase" href="{{ url_for('home', posts_by=request.args.get('posts_by')) }}">← Latest Posts</a></div>
+                        <div class="d-flex justify-content-start mb-4"><a class="btn btn-primary text-uppercase" href="{{ url_for('home') }}">← Latest Lectures</a></div>
                     {% endif %}
                 </div>
             </div>

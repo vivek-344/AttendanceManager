@@ -1,0 +1,64 @@
+{% block content %} {% include "header.html" %}
+{% from "bootstrap5/form.html" import render_form %}
+
+<!-- Page Header -->
+<header
+    class="masthead"
+    style="background-image: url({{ image }})"
+>
+  <div class="container position-relative px-4 px-lg-5">
+    <div class="row gx-4 gx-lg-5 justify-content-center">
+      <div class="col-md-10 col-lg-8 col-xl-7">
+        <div class="page-heading">
+          <h1>{{ action }}</h1>
+          <span class="subheading">{{ phrase }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="mb-4">
+  <div class="container">
+    <div class="row">
+      {% with messages = get_flashed_messages() %}
+        {% if messages %}
+          <p class="flash">{{ messages[-1] }}</p>
+            {% endif %}
+      {% endwith %}
+      <div class="col-lg-8 col-md-10 mx-auto">
+        {{ render_form(form) }}
+      </div>
+    </div>
+    {% if attendance_data %}
+    <!-- Attendance Report Section -->
+      <div class="row mt-5">
+        <div class="col-lg-10 col-md-12 mx-auto">
+          <h2 class="text-center">Attendance Report</h2>
+          <table class="table table-striped mt-3">
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Student Name</th>
+                <th>Enrollment Number</th>
+                <th>Attendance Percentage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for record in attendance_data %}
+              <tr>
+                <td>{{ record.rank }}</td>
+                <td>{{ record.student_name }}</td>
+                <td>{{ record.enrollment_number }}</td>
+                <td>{{ record.percentage }}%</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</main>
+
+{% include "footer.html" %} {% endblock %}

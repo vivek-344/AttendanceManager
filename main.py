@@ -1,31 +1,25 @@
 import os
 import smtplib
-import datetime
-from typing import List
-from hashlib import md5
-from datetime import date
+from datetime import datetime, timezone
 from functools import wraps
 from dotenv import load_dotenv
-from flask_ckeditor import CKEditor
 from flask_bootstrap import Bootstrap5
-from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import Integer, String, Text, ForeignKey
-from forms import CreatePostForm, RegisterForm, LoginForm, CommentForm
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from models import db, User, Batch, Student, Subject, Lecture, Attendance, AttendanceStats
 from flask import Flask, render_template, request, redirect, url_for, jsonify, abort, flash
-from flask_login import UserMixin, login_user, LoginManager, current_user, logout_user, login_required
+from flask_login import login_user, LoginManager, current_user, logout_user, login_required
+from forms import UserRegistrationForm, SubjectForm, StudentForm, LectureForm, AttendanceForm, AttendanceReportForm, UserLoginForm
 
 
 load_dotenv()
 EMAIL = os.getenv("EMAIL")
 PASSWORD = os.getenv("PASSWORD")
+SECRET_KEY = os.getenv("SECRET_KEY")
 SQLALCHEMY_DATABASE_URI = os.getenv("SQLALCHEMY_DATABASE_URI")
 
 
 app = Flask(__name__)
-ckeditor = CKEditor(app)
-app.config['SECRET_KEY'] = 'SOME_KEY'
+app.config['SECRET_KEY'] = SECRET_KEY
 Bootstrap5(app)
 
 
@@ -33,60 +27,8 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 
 
-class Base(DeclarativeBase):
-    pass
-
-
-def gravatar_url(email, size=100, rating='g', default='retro', force_default=False):
-    hash_value = md5(email.lower().encode('utf-8')).hexdigest()
-    return f"https://www.gravatar.com/avatar/{hash_value}?s={size}&d={default}&r={rating}&f={force_default}"
-
-
-@app.context_processor
-def inject_gravatar_url():
-    return dict(gravatar_url=gravatar_url)
-
-
 app.config['SQLALCHEMY_DATABASE_URI'] = SQLALCHEMY_DATABASE_URI
-db = SQLAlchemy(model_class=Base)
 db.init_app(app)
-
-
-class User(UserMixin, db.Model):
-    __tablename__ = "users"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    email: Mapped[str] = mapped_column(String(100), unique=True)
-    password: Mapped[str] = mapped_column(String(100))
-    name: Mapped[str] = mapped_column(String(1000))
-    blogs: Mapped[List["BlogPost"]] = relationship("BlogPost", back_populates="parent")
-    comments: Mapped[List["Comment"]] = relationship("Comment", back_populates="parent")
-
-
-class BlogPost(db.Model):
-    __tablename__ = "blog_posts"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    title: Mapped[str] = mapped_column(String(250), unique=True, nullable=False)
-    subtitle: Mapped[str] = mapped_column(String(250), nullable=False)
-    date: Mapped[str] = mapped_column(String(250), nullable=False)
-    body: Mapped[str] = mapped_column(Text, nullable=False)
-    author: Mapped[str] = mapped_column(String(250), nullable=False)
-    img_url: Mapped[str] = mapped_column(String(250), nullable=False)
-    parent_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    parent: Mapped["User"] = relationship("User", back_populates="blogs")
-    comments: Mapped[List["Comment"]] = relationship("Comment", back_populates="parent_post",
-                                                     cascade="all, delete-orphan")
-
-
-class Comment(db.Model):
-    __tablename__ = "comments"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    date: Mapped[str] = mapped_column(String(250), nullable=False)
-    comment: Mapped[str] = mapped_column(Text, nullable=False)
-    author: Mapped[str] = mapped_column(String(250), nullable=False)
-    parent_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    parent: Mapped["User"] = relationship("User", back_populates="comments")
-    post_id: Mapped[int] = mapped_column(ForeignKey("blog_posts.id"))
-    parent_post: Mapped["BlogPost"] = relationship("BlogPost", back_populates="comments")
 
 
 with app.app_context():
@@ -97,11 +39,21 @@ def admin_only(func):
     @wraps(func)
     @login_required
     def wrapper(*args, **kwargs):
-        post_id = kwargs.get('post_id')
-        post = BlogPost.query.get(post_id)
-        if not post:
+        if not current_user.is_admin:
+            return abort(403)
+        return func(*args, **kwargs)
+    return wrapper
+
+
+def taker_only(func):
+    @wraps(func)
+    @login_required
+    def wrapper(*args, **kwargs):
+        lecture_id = kwargs.get('lecture_id')
+        lecture = Lecture.query.get(lecture_id)
+        if not lecture:
             return page_not_found(404)
-        if post.parent_id != current_user.id:
+        if lecture.teacher_id != current_user.id:
             return abort(403)
         return func(*args, **kwargs)
     return wrapper
@@ -109,34 +61,38 @@ def admin_only(func):
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    return db.session.get(User, int(user_id))
 
 
 @app.route('/register', methods=['GET', 'POST'])
+@admin_only
 def register():
-    form = RegisterForm()
+    image = '../static/assets/img/register-bg.jpg'
+    curr_user = current_user if current_user.is_authenticated else None
+    form = UserRegistrationForm()
     if form.validate_on_submit():
         new_user = User()
         new_user.email = form.email.data
         new_user.password = generate_password_hash(form.password.data, 'pbkdf2:sha256', 8)
         new_user.name = form.name.data
+        new_user.is_admin = form.is_admin.data
+
         user = User.query.filter_by(email=form.email.data).first()
         if not user:
             db.session.add(new_user)
             db.session.commit()
-            return redirect(url_for('login', registered="True"))
-        return redirect(url_for('login', registered="Already"))
-    return render_template("register.html", form=form, logged_in=current_user.is_authenticated)
+            flash("Registration successful! You can now log in.")
+        else:
+            flash("This email is already registered.")
+    return render_template("forms.html", form=form, user=curr_user, action="Register",
+                           phrase="Start Contributing to the Blog!", image=image)
 
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    form = LoginForm()
-    registered = request.args.get('registered')
-    if registered == "True":
-        flash('User registered successfully!')
-    if registered == "Already":
-        flash('User already registered. Try logging in instead.')
+    image = '../static/assets/img/login-bg.jpg'
+    form = UserLoginForm()
+    user = current_user if current_user.is_authenticated else None
     if form.validate_on_submit():
         email = form.email.data
         password = form.password.data
@@ -150,7 +106,7 @@ def login():
                 flash("Wrong Password Entered.")
         else:
             flash("User doesn't exist. Consider Registering!")
-    return render_template("login.html", form=form, logged_in=current_user.is_authenticated)
+    return render_template("forms.html", form=form, user=user, action="Log In", phrase="Welcome Back!", image=image)
 
 
 @app.route('/logout')
@@ -160,149 +116,252 @@ def logout():
     return redirect(url_for('home'))
 
 
-def render_posts_template(posts, start=None, end=None):
-    total_posts = len(posts)
-    user_id = current_user.id if current_user.is_authenticated else None
-    year = datetime.datetime.now().year
+def render_lectures_template(lectures, start=None, end=None):
+    total_lectures = len(lectures)
+    user = current_user if current_user.is_authenticated else None
+    year = datetime.now().year
 
     if start is None:
         start = 0
     if end is None:
-        end = total_posts
+        end = total_lectures
 
     start = max(0, start)
-    end = min(total_posts, end)
+    end = min(total_lectures, end)
 
-    return render_template("index.html", year=year, posts=posts, start=start, end=end,
-                           logged_in=current_user.is_authenticated, user_id=user_id, len=total_posts)
+    return render_template("index.html", year=year, lectures=lectures, start=start, end=end,
+                           user=user, len=total_lectures)
 
 
 @app.route('/')
 @app.route('/home')
 def home():
-    post_by_user_id = request.args.get('posts_by', type=int)
-    posts = BlogPost.query.all()
-    if post_by_user_id:
-        posts = [post for post in posts if post.parent_id == post_by_user_id]
-    posts = posts[::-1]
-    total_posts = len(posts)
-    return render_posts_template(posts=posts, start=0, end=min(total_posts, 5))
-
-
-@app.route('/older_posts')
-def older():
-    post_by_user_id = request.args.get('posts_by', type=int)
-    posts = BlogPost.query.all()
-    if post_by_user_id:
-        posts = [post for post in posts if post.parent_id == post_by_user_id]
-    posts = posts[::-1]
-    total_posts = len(posts)
-    return render_posts_template(posts=posts, start=min(total_posts, 5), end=None)
-
-
-@app.route("/blog/<int:post_id>", methods=['GET', 'POST'])
-def blog(post_id):
-    post = BlogPost.query.get(post_id)
-    if not post:
-        return page_not_found(404)
-    result = db.session.execute(db.select(Comment).where(Comment.post_id == post_id))
-    comments = result.scalars().all()
-    form = CommentForm()
-    if current_user.is_authenticated:
-        user_id = current_user.id
-    else:
-        user_id = None
-    if form.validate_on_submit():
-        new_comment = Comment(
-            date=date.today().strftime("%B %d, %Y"),
-            comment=form.comment.data,
-            author=current_user.name,
-            parent_id=current_user.id,
-            post_id=post_id
-        )
-        db.session.add(new_comment)
-        db.session.commit()
-        return redirect(url_for('blog', post_id=post_id))
-    return render_template("post.html", year=datetime.datetime.now().year, post=post,
-                           logged_in=current_user.is_authenticated, user_id=user_id, form=form, comments=comments)
-
-
-@app.route('/new-post', methods=['GET', 'POST'])
-@login_required
-def add_new_post():
-    form = CreatePostForm()
-    if form.validate_on_submit():
-        new_post = BlogPost(
-            title=form.title.data,
-            subtitle=form.subtitle.data,
-            body=form.body.data,
-            img_url=form.img_url.data,
-            author=current_user.name,
-            date=date.today().strftime("%B %d, %Y"),
-            parent_id=current_user.id
-        )
-        db.session.add(new_post)
-        db.session.commit()
-        return redirect(url_for("home"))
-    return render_template("make-post.html", form=form, action="Add new Post", logged_in=current_user.is_authenticated)
-
-
-@app.route('/edit-post/<post_id>', methods=['GET', 'POST'])
-@admin_only
-def edit_post(post_id):
-    post = BlogPost.query.get(post_id)
-    if not post:
-        return page_not_found(404)
-    form = CreatePostForm(
-        title=post.title,
-        subtitle=post.subtitle,
-        img_url=post.img_url,
-        body=post.body
+    # Find lectures where all attendance records are marked as False (absent)
+    lectures_with_no_attendance = (
+        Lecture.query
+        .outerjoin(Attendance)
+        .group_by(Lecture.id)
+        .having(db.func.count(Attendance.id) == 0)  # No attendance records
+        .all()
     )
+
+    # Find lectures where all attendance records are marked 'False' (absent)
+    lectures_with_all_absent = (
+        Lecture.query
+        .join(Attendance)
+        .group_by(Lecture.id)
+        .having(db.func.count(Attendance.id) == db.func.count(Attendance.id).filter(
+            Attendance.status == False))  # All students absent
+        .all()
+    )
+
+    # Combine both queries
+    lectures_to_delete = set(lectures_with_no_attendance) | set(lectures_with_all_absent)
+
+    # Delete attendance records for these lectures
+    for lecture in lectures_to_delete:
+        # Delete all attendance records related to the lecture
+        Attendance.query.filter_by(lecture_id=lecture.id).delete()
+
+    # Delete the lectures themselves
+    for lecture in lectures_to_delete:
+        db.session.delete(lecture)
+
+    # Commit the changes
+    db.session.commit()
+
+    # Fetch all lectures and reverse for latest-first display
+    lectures = Lecture.query.order_by(Lecture.timestamp.desc()).all()
+    total_lectures = len(lectures)
+
+    return render_lectures_template(lectures=lectures, start=0, end=min(total_lectures, 5))
+
+
+@app.route('/older_lectures')
+def older():
+    lectures = Lecture.query.all()
+    lectures = lectures[::-1]
+    total_lectures = len(lectures)
+    return render_lectures_template(lectures=lectures, start=min(total_lectures, 5), end=None)
+
+
+@app.route("/attendance/", methods=['GET', 'POST'])
+def get_attendance():
+    form = AttendanceReportForm()
+    image = '../static/assets/img/post-bg.jpg'
+    user = current_user if current_user.is_authenticated else None
+
+    # Populate the choices for subject and batch
+    form.subject.choices = [(subject.id, subject.subject_name) for subject in Subject.query.all()]
+    form.batch.choices = [(batch.id, batch.name) for batch in Batch.query.all()]
+
+    attendance_data = None
+
     if form.validate_on_submit():
-        post.title = form.title.data
-        post.subtitle = form.subtitle.data
-        post.body = form.body.data
-        post.img_url = form.img_url.data
-        post.author = current_user.name
-        post.date = date.today().strftime("%B %d, %Y")
-        post.parent_id = current_user.id
+        subject_id = form.subject.data
+        batch_id = form.batch.data
+
+        # Calculate attendance percentages
+        students = Student.query.filter_by(batch_id=batch_id).all()
+        attendance_data = []
+
+        for student in students:
+            percentage = AttendanceStats.get_percentage(student.id, subject_id)
+            attendance_data.append({
+                'student_name': student.student_name,
+                'enrollment_number': student.enrollment_number,
+                'percentage': percentage
+            })
+
+        attendance_data = sorted(attendance_data, key=lambda x: x['percentage'], reverse=True)
+
+        for idx, record in enumerate(attendance_data, start=1):
+            record['rank'] = idx
+
+    return render_template(
+        "forms.html",
+        form=form,
+        user=user,
+        action="Attendance",
+        phrase="Get Attendance Report!",
+        image=image,
+        attendance_data=attendance_data
+    )
+
+
+@app.route("/lecture/<int:lecture_id>", methods=['GET', 'POST'])
+def get_lecture_attendance(lecture_id):
+    return redirect(
+        url_for(
+            'mark_attendance',
+            lecture_id=lecture_id,
+        )
+    )
+
+
+@app.route('/new-lecture', methods=['GET', 'POST'])
+@login_required
+def add_new_lecture():
+    form = LectureForm()
+    # Populate subject choices for the current teacher
+    form.subject.choices = [(s.id, s.subject_name) for s in Subject.query.filter_by(teacher_id=current_user.id).all()]
+    form.batch.choices = [(batch.id, batch.name) for batch in Batch.query.all()]
+
+    if request.method == 'POST' and form.validate_on_submit():
+        # Create new lecture
+        new_lecture = Lecture(
+            subject_id=form.subject.data,
+            teacher_id=current_user.id,
+            batch_id=form.batch.data,
+            timestamp=datetime.now(timezone.utc)
+        )
+        db.session.add(new_lecture)
         db.session.commit()
-        return redirect(url_for("blog", post_id=post_id))
-    return render_template("make-post.html", form=form, action="Edit Post", logged_in=current_user.is_authenticated)
+        flash('Lecture created successfully!', 'success')
+
+        # Redirect to mark attendance for this lecture and batch
+        return redirect(
+            url_for(
+                'mark_attendance',
+                lecture_id=new_lecture.id,
+            )
+        )
+
+    image = '../static/assets/img/post-bg.jpg'
+    return render_template(
+        'forms.html',
+        form=form,
+        user=current_user,
+        action="Add New Lecture",
+        phrase="Create a new lecture and proceed to mark attendance.",
+        image=image
+    )
 
 
-@app.route('/delete-post/<post_id>', methods=['GET', 'DELETE'])
-@admin_only
-def delete_post(post_id):
-    post = BlogPost.query.get(post_id)
-    db.session.delete(post)
+@app.route('/mark-attendance', methods=['GET', 'POST'])
+@login_required
+def mark_attendance():
+    lecture_id = request.args.get('lecture_id', type=int)
+    lecture = Lecture.query.get_or_404(lecture_id)
+    batch_id = lecture.batch_id
+    students = Student.query.filter_by(batch_id=batch_id).all()
+
+    if not students:
+        flash("No students found in the selected batch.", "danger")
+        return redirect(url_for('home'))
+
+    # Fetch existing attendance records for the lecture
+    existing_attendance = {att.student_id: att.status for att in Attendance.query.filter_by(lecture_id=lecture_id).all()}
+
+    form = AttendanceForm()
+    form.lecture_id.data = lecture_id
+
+    if request.method == 'POST' and form.validate_on_submit():
+        attendance_records = []
+        for student in students:
+            # Check if attendance is marked as "Present" (checkbox is ticked)
+            attendance_status = request.form.get(f'attendance_{student.id}') == 'on'
+            existing_record = existing_attendance.get(student.id)
+
+            if existing_record is None:
+                # Create new record if no existing record is found
+                attendance_records.append(Attendance(
+                    lecture_id=lecture_id,
+                    student_id=student.id,
+                    status=attendance_status
+                ))
+            elif existing_record != attendance_status:
+                # Update the record only if the status has changed
+                attendance = Attendance.query.filter_by(lecture_id=lecture_id, student_id=student.id).first()
+                attendance.status = attendance_status
+
+        if attendance_records:
+            db.session.bulk_save_objects(attendance_records)
+        db.session.commit()
+
+        flash("Attendance marked successfully!", "success")
+        return redirect(url_for('home'))
+
+    # Prepare the pre-checked status for each student based on existing attendance
+    attendance_status_map = {
+        student.id: existing_attendance.get(student.id, False) for student in students
+    }
+
+    image = '../static/assets/img/post-bg.jpg'
+    return render_template(
+        'mark_attendance.html',
+        form=form,
+        lecture_id=lecture_id,
+        batch_id=batch_id,
+        students=students,
+        attendance_status_map=attendance_status_map,
+        user=current_user,
+        action="Mark Attendance",
+        phrase=f"Mark attendance for Lecture {lecture_id} - {lecture.subject.subject_name}",
+        image=image
+    )
+
+
+@app.route('/delete-lecture/<lecture_id>', methods=['GET', 'DELETE'])
+@taker_only
+def delete_lecture(lecture_id):
+    lecture = db.session.query(Lecture).get(lecture_id)
+    db.session.query(Attendance).filter_by(lecture_id=lecture_id).delete()
+    db.session.delete(lecture)
     db.session.commit()
     return redirect(url_for('home'))
 
 
-@app.route("/delete_comment/<int:post_id>/<int:comment_id>")
-def delete_comment(post_id, comment_id):
-    post = db.get_or_404(BlogPost, post_id)
-    comment = db.get_or_404(Comment, comment_id)
-    if current_user.id == post.parent_id or current_user.id == comment.parent_id:
-        db.session.delete(comment)
-        db.session.commit()
-    else:
-        return abort(403)
-    return redirect(url_for('blog', post_id=post_id))
-
-
 @app.route('/about')
 def about():
-    year = datetime.datetime.now().year
-    return render_template("about.html", year=year, logged_in=current_user.is_authenticated)
+    year = datetime.now().year
+    return render_template("about.html", year=year, user=current_user)
 
 
 @app.route('/contact')
 def contact():
-    year = datetime.datetime.now().year
-    return render_template("contact.html", year=year, logged_in=current_user.is_authenticated)
+    year = datetime.now().year
+    return render_template("contact.html", year=year, user=current_user)
 
 
 @app.route('/send_mail', methods=["POST"])
@@ -335,7 +394,7 @@ def send_mail():
 
 @app.errorhandler(404)
 def page_not_found(error):
-    year = datetime.datetime.now().year
+    year = datetime.now().year
     return render_template("404.html", year=year, error=error), 404
 
 
